@@ -19,7 +19,15 @@
 
 #define WINSCORE 7
 
-// Function prototypes
+//Struct used for the rain falling, based on a list
+typedef struct rain
+{
+  int posX, posY;
+  struct rain* previous;
+  struct rain* next;
+}RainList;
+
+// Functions used for this game expecifically
 void sendBlock(int);
 void playBird(void);
 void beep(int, int);
@@ -28,10 +36,12 @@ byte doDrawRS(byte);
 byte doDrawLSP(byte, byte);
 byte doDrawRSP(byte, byte);
 void drawBird(byte startRow, byte endRow);
-void drawLandscape(byte startRow, byte endRow);
+void drawRainBlock(byte startRow, byte endRow, RainList* r);
+void updateRain(RainList* r);
 
+
+//Functions used for management of the data sent to the display
 void doNumber (int x, int y, int value);
-
 void ssd1306_init(void);
 void ssd1306_xfer_start(void);
 void ssd1306_xfer_stop(void);
@@ -45,9 +55,77 @@ void ssd1306_fillscreen(uint8_t fill_Data);
 void ssd1306_char_f6x8(uint8_t x, uint8_t y, const char ch[]);
 void ssd1306_draw_bmp(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t bitmap[]);
 void drawPlayer(byte location);
+
+//Functions used in rainList
+/*Cria um deck vazio.*/
+RainList* createRainList (){return NULL;}
+RainList* getFront (RainList *q)
+{
+  if (q == NULL)
+    return NULL;
+
+  RainList* aux = q;
+  while (aux->next != NULL)
+    aux = aux->next;
+
+  return aux;
+}                                 
+RainList* getRear (RainList *q)
+{
+  if (q == NULL)  
+    return NULL;
+  
+  return q;
+}    
+RainList* insertFront (RainList *q, int x)
+{
+  RainList* neu = (RainList*)malloc(sizeof(RainList));
+  neu->posX = x;
+  neu->posY = 0;
+  neu->next = NULL;
+
+  RainList* aux = q;
+  if (aux != NULL)
+    while (aux->next != NULL)
+      aux = aux->next;
+
+  neu->previous = aux;
+  aux->next = neu;
+  
+  return q;
+}
+RainList* insertRear (RainList *q, int x)
+{
+  RainList* neu = (RainList*)malloc(sizeof(RainList));
+  neu->posX = x;
+  neu->posY = 0;
+  neu->previous = NULL;
+  neu->next = q;
+  if (q != NULL)
+    q->previous = neu;
+
+  return neu;
+}  
+void kill (RainList* dead)
+{
+  if (dead->previous == NULL && dead->next != NULL)
+      dead->next->previous = NULL;
+
+  else if (dead->next == NULL && dead->previous != NULL)
+    dead->previous->next = NULL;
+
+  else if (dead->next != NULL && dead->previous != NULL)
+  {
+    dead->previous->next = dead->next;
+    dead->next->previous = dead->previous;
+  }
+
+  free(dead);
+}                    
+
+
 int playerOffset = 0; // y offset of the top of the player
 int playerXposition = 0;
-
 
 int score = 0;
 int top = 0;
@@ -56,8 +134,6 @@ boolean newHigh = 0;
 boolean stopAnimate = 0; // this is set to 1 when a collision is detected
 boolean mute = 0;
 
-byte landscape[128];
-
 byte i;
 int totaldistance = 0;
 byte interscore = 0;
@@ -65,8 +141,6 @@ float incr;
 float start = 0.0;
 float si = 0.1;
 int gostep = 5;
-float height = 25.0;
-byte lastPos = 0;
 int boost = 0;
 boolean onground = 0;//boolean for checking wrather the bird is on the ground or not
 int speedBoost = 0;
@@ -365,10 +439,8 @@ void playBird() {
   start = 3.14159265;
   si = 0.05;
   gostep = 5;
-  height = 20.0;
-  playerOffset = 10;
+  playerOffset = 50;
   playerXposition = 2;
-  lastPos = 0;
   boost = 0;
   onground = 0; 
   speedBoost = 0;
@@ -377,9 +449,8 @@ void playBird() {
   score = 0;
   totaldistance = 0;
   int thisrun = 0;
-  
-  incr = start;
-  
+  RainList* storm = NULL;
+
   randomSeed(0);
   
   while (stopAnimate == 0) {
@@ -406,8 +477,6 @@ void playBird() {
     } else {
       thisrun = 0;
     }
-    
-    lastPos = playerOffset;
    
 
     // With the right button pressed - the ball goes right 
@@ -421,12 +490,19 @@ void playBird() {
     if (analogRead(0) < 940)
     {
       playerOffset += 1;
-      if (playerOffset > 56)
-        playerOffset = 56;
+      if (playerOffset > 52)
+        playerOffset = 52;
     }
- 
+
+    if(totaldistance == 10)
+      storm = insertRear(storm, 40);
+    if(totaldistance == 20)
+      storm = insertRear(storm, 60);
+
     // Fill in the bird in the top couple of rows
-    drawBird(0,8);
+    playerOffset >= 8 ? drawBird((playerOffset/8)-1, (playerOffset+1)) : drawBird(1, 2);
+    //Updates and draws all the rain
+    updateRain(storm);
     /*
     ssd1306_setpos(32, 1);
     ssd1306_send_data_start();
@@ -498,28 +574,28 @@ byte doDrawLS(byte P2) {
 byte doDrawRSP(byte column, byte P2) {
   switch(column) {
   case 0:
-  return((B00011000) >> P2);
+  return((B01000000) >> P2);
   break;
   case 1:
-  return((B01100110) >> P2);
+  return((B01100000) >> P2);
   break;
   case 2:
-  return((B01000010) >> P2);
+  return((B01110000) >> P2);
   break;
   case 3:
-  return((B10000001) >> P2);
+  return((B00111000) >> P2);
   break;
   case 4:
-  return((B10000001) >> P2);
+  return((B11111100) >> P2);
   break;
   case 5:
-  return((B01000010) >> P2);
+  return((B10011111) >> P2);
   break;
   case 6:
-  return((B01100110) >> P2);
+  return((B00100101) >> P2);
   break;
   default:
-  return((B00011000) >> P2);
+  return((B00000110) >> P2);
   break;
   }
 }
@@ -527,46 +603,45 @@ byte doDrawRSP(byte column, byte P2) {
 byte doDrawLSP(byte column, byte P2) {
   switch(column) {
   case 0:
-  return((B00011000) << P2);
+  return((B01000000) << P2);
   break;
   case 1:
-  return((B01100110) << P2);
+  return((B01100000) << P2);
   break;
   case 2:
-  return((B01000010) << P2);
+  return((B01110000) << P2);
   break;
   case 3:
-  return((B10000001) << P2);
+  return((B00111000) << P2);
   break;
   case 4:
-  return((B10000001) << P2);
+  return((B11111100) << P2);
   break;
   case 5:
-  return((B01000010) << P2);
+  return((B10011111) << P2);
   break;
   case 6:
-  return((B01100110) << P2);
+  return((B00100101) << P2);
   break;
   default:
-  return((B00011000) << P2);
+  return((B00000110) << P2);
   break;
   }
 }
 
 void drawBird(byte startRow, byte endRow) {
-    for (byte c = startRow; c < endRow; c++) {
-        ssd1306_setpos(playerXposition, c);
+    for (byte l = startRow; l <= endRow; l++) {
+        ssd1306_setpos(playerXposition, l);
         ssd1306_send_data_start();
         ssd1306_send_byte(B00000000);
         ssd1306_send_byte(B00000000);
         for (byte r = 8; r<16; r++) {
-          int x = r;
           // bird with LS only'
-          if (c == playerOffset/8) {
+          if (l == playerOffset/8) {
             ssd1306_send_byte(doDrawLSP(r-8, playerOffset % 8));
           // bird with RS only
           } 
-          else if (c == playerOffset/8 + 1) {
+          else if (l == playerOffset/8 + 1) {
             ssd1306_send_byte(doDrawRSP(r-8, 8- playerOffset % 8));
           } 
           else {
@@ -579,53 +654,42 @@ void drawBird(byte startRow, byte endRow) {
     }
 }
 
-void drawLandscape(byte startRow, byte endRow) {
-  // Draw the landscape and bird 
-  for (byte c = startRow; c < endRow; c++) {
-    ssd1306_setpos(0, c);
+void drawRainBlock(byte startRow, byte endRow, RainList* r)
+{
+  for (byte l=startRow ; l<=endRow ; l++)
+  {
+    ssd1306_setpos(r->posX, l);
     ssd1306_send_data_start();
-    for (byte r = 0; r<127; r++) {
-      int x = r;
-      int y = landscape[r];
-      if (r<8 || r>15) {
-        if (c == y/8) {
-          ssd1306_send_byte(doDrawLS(y % 8));
-        } else if (c == y/8+1) {
-          ssd1306_send_byte(doDrawRS(8 - y % 8));
-        } else {
-          ssd1306_send_byte(B00000000);
-        }  
-      } else {
-        // landscape with LS only
-        if ( (c == y/8) && (c != playerOffset/8) && (c != playerOffset/8 + 1) ) {
-          ssd1306_send_byte(doDrawLS(y % 8));
-        // landscape with RS only  
-        } else if ( (c == y/8+1) && (c != playerOffset/8) && (c != playerOffset/8 + 1) ) {
-          ssd1306_send_byte(doDrawRS(8 - y % 8));
-        // bird with LS only  
-        } else if ( (c != y/8+1) && (c != y/8) && (c == playerOffset/8) ) {
-          ssd1306_send_byte(doDrawLSP(r-8, playerOffset % 8));
-        // bird with RS only
-        } else if ( (c != y/8+1) && (c != y/8) && (c == playerOffset/8 + 1) ) {
-          ssd1306_send_byte(doDrawRSP(r-8, 8- playerOffset % 8));
-        // both with LS
-        } else if ( (c == y/8) && (c == playerOffset/8) ) {
-          ssd1306_send_byte(doDrawLSP(r-8, playerOffset % 8) | doDrawLS(y % 8));            
-        // both with RS
-        } else if ( (c == y/8+1) && (c == playerOffset/8+1) ) {
-          ssd1306_send_byte(doDrawRSP(r-8, 8-playerOffset % 8) | doDrawRS(8- y % 8));            
-        // landscape left, bird right
-        } else if ( (c == y/8) && (c == playerOffset/8+1) ) {
-          ssd1306_send_byte(doDrawRSP(r-8, 8-playerOffset % 8) | doDrawLS(y % 8));            
-        // landscape right, bird left
-        } else if ( (c == y/8+1) && (c == playerOffset/8) ) {
-          ssd1306_send_byte(doDrawLSP(r-8, playerOffset % 8) | doDrawRS(8- y % 8));            
-        } else {
-          ssd1306_send_byte(B00000000);
-        }
-      }      
+    for (byte c=0 ; c<3 ; c++)
+    {
+      if (l == r->posY/8)
+        ssd1306_send_byte(B11111111 << ((r->posY)%8));
+      else if (l == playerOffset/8 + 1)
+        ssd1306_send_byte(B11111111 >> (8 - ((r->posY)%8)));
+      else 
+        ssd1306_send_byte(B00000000);
     }
     ssd1306_send_data_stop();
   }
+}
 
+void updateRain(RainList* r)
+{
+  RainList* aux = r;
+  while (aux != NULL)
+  {
+    if (totaldistance%10 == 0)
+      aux->posY += 1;
+    //Erasing the raindrops if they fall on the ground
+    if ((aux->posY + 8) > 62)
+      kill(r);
+    (aux->posY) >= 8 ? drawRainBlock(((aux->posY)/8)-1, ((aux->posY)/8)+1, aux) : drawRainBlock(1, 2, aux);
+    //Collision
+    if (((aux->posY)+8) > playerOffset && (playerXposition-(aux->posX) < 3) && (playerXposition-(aux->posX) > (-3)))
+    {
+      stopAnimate = 1;
+      delay(500);
+    }
+    aux = aux->next;
+  }
 }
