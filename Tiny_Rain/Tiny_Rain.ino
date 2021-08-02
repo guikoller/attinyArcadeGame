@@ -234,12 +234,12 @@ void loop() {
     for (int k = 2; k>=0;k--){
       for (playerOffset = 55; playerOffset>0+(k*10);playerOffset--) {
         drawBird(0,8);
-        //beep(2,200+playerOffset);
+        beep(2,200+playerOffset);
         delay(2);
       }
       for (playerOffset = 0+(k*10); playerOffset<55;playerOffset++) {
         drawBird(0,8);
-        //beep(2,200+playerOffset);
+        beep(2,200+playerOffset);
         delay(2);
       }
     }
@@ -472,7 +472,7 @@ void playBird() {
   totalRun = 0;
   spawnTimer = 100;
   interscore = 0;
-  playerOffset = 50;
+  playerOffset = 56;
   playerXposition = 2;
   onground = 0; 
   doneUpdate = 0;
@@ -480,17 +480,13 @@ void playBird() {
   score = 0; 
   totalRun = 0;
   int thisrun = 0;
+  int flag = 0;
   List* storm = NULL;
   List* shots = NULL;
 
   randomSeed(0);
   
   while (stopAnimate == 0) {
-    // Clearing the screen
-    if (totalRun % 20 == 0)
-    {
-      ssd1306_fillscreen(0);
-    }
     // Total distance isn't really distance - it's a measure of how long the game's been running - used to stop the game
     totalRun++;
 
@@ -509,8 +505,6 @@ void playBird() {
       playerXposition -= 1;
       if (playerXposition < 1)
         playerXposition = 1;
-    } else {
-      thisrun = 0;
     }
    
 
@@ -523,25 +517,27 @@ void playBird() {
     }
 
     // With the fire button pressed - it fires
-    if (analogRead(0) < 940)
+    if (analogRead(0) < 940 && flag == 0)
     {
-      shots = insertRearShots(shots, playerXposition + 3, playerOffset);
-      delay(100);
-      if (playerOffset > 52)
-        playerOffset = 52;
+      shots = insertRearShots(shots, playerXposition + 6, playerOffset);
+      flag = 1;
+      //delay(100);
     }
 
     // Spawning the raindrops
     if (totalRun % spawnTimer == 0)
+    {
       storm = insertRearRain(storm, rand()%120);
+      flag = 0;
+    }
     // Updating the spawnTimer
     if (totalRun % 1000 == 0)
     {
-      spawnTimer += 5;
+      spawnTimer -= 3;
     }
 
     // Fill in the bird in the top couple of rows
-    playerOffset >= 8 ? drawBird((playerOffset/8)-1, (playerOffset+1)) : drawBird(1, 2);
+    drawBird(7, 8);
     // Updates and draws the rain
     updateRain(storm, shots);
     updateShots(shots);
@@ -741,10 +737,16 @@ void updateRain(List* r, List* s)
   List* aux = r;
   while (aux != NULL)
   {
-    if (totalRun%3 == 0)
+    if (totalRun%10 == 0)
       aux->posY += 1;
 
-    (aux->posY) >= 8 ? drawRainBlock(((aux->posY)/8)-1, ((aux->posY)/8)+1, aux) : drawRainBlock(1, 2, aux);
+    if (aux->posY <= 8)
+      drawRainBlock(1, 2, aux);
+    else if (aux->posY < 55)
+      drawRainBlock(((aux->posY)/8)-1, ((aux->posY)/8)+1, aux);
+    else
+      drawRainBlock(7, 8, aux);
+
     //Collision
     if (((aux->posY)+8) > playerOffset && (playerXposition-(aux->posX) < 3) && (playerXposition-(aux->posX) > (-8)))
     {
@@ -781,6 +783,7 @@ void updateRain(List* r, List* s)
       List* aux2 = aux;
       aux = aux->next;
       kill(aux2);
+      ssd1306_fillscreen(0);
       continue;
     }
     aux = aux->next;
@@ -792,7 +795,7 @@ void updateShots(List* s)
   List* aux = s;
   while (aux != NULL)
   {
-    aux->posY -= 1;
+    aux->posY -= 2;
 
     (aux->posY) >= 8 ? drawShot(((aux->posY)/8)-1, ((aux->posY)/8)+1, aux) : drawShot(1, 2, aux);
 
