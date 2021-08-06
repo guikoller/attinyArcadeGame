@@ -36,8 +36,7 @@ byte doDrawLS(byte);
 byte doDrawRS(byte);
 byte doDrawLSP(byte, byte);
 byte doDrawRSP(byte, byte);
-void drawPlayer(byte location);
-void drawBird(byte startRow, byte endRow);
+void drawPlayer(byte startRow, byte endRow);
 void drawRainBlock(byte startRow, byte endRow, List* r);
 void drawShot(byte startRow, byte endRow, List* s);
 void updateRain(List* r, List* s);
@@ -60,19 +59,18 @@ void ssd1306_char_f6x8(uint8_t x, uint8_t y, const char ch[]);
 void ssd1306_draw_bmp(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t bitmap[]);
 
 int playerOffset = 0; // y offset of the top of the player
-int playerXposition = 0;
+int playerXposition = 0; // player's offset according to the left side of the screen
 
 int score = 0;
 int top = 0;
 
 boolean newHigh = 0;
-boolean stopAnimate = 0; // this is set to 1 when a collision is detected
+boolean stopAnimate = 0;
 boolean mute = 0;
 
 byte i;
 int totalRun = 0;
-int spawnTimer = 100;
-byte interscore = 0;
+int spawnTimer = 100;// The frequency of which the blocks spawn
 boolean onground = 0;//boolean for checking wrather the bird is on the ground or not
 boolean doneUpdate = 0;
 
@@ -233,12 +231,12 @@ void loop() {
 
     for (int k = 2; k>=0;k--){
       for (playerOffset = 55; playerOffset>0+(k*10);playerOffset--) {
-        drawBird(0,8);
+        drawPlayer(0,8);
         beep(2,200+playerOffset);
         delay(2);
       }
       for (playerOffset = 0+(k*10); playerOffset<55;playerOffset++) {
-        drawBird(0,8);
+        drawPlayer(0,8);
         beep(2,200+playerOffset);
         delay(2);
       }
@@ -464,6 +462,18 @@ void beep(int bCount, int bDelay) {
   }
 }
 
+void sendBlock(int fill) {
+  ssd1306_send_byte(B00000000);
+  ssd1306_send_byte(B00000000);
+  ssd1306_send_byte(B00000000);
+  ssd1306_send_byte(B00000000);
+  ssd1306_send_byte(B00000000);
+  ssd1306_send_byte(B00000000);
+  ssd1306_send_byte(B00000000);
+  ssd1306_send_byte(B00000000);
+}
+
+
 /* ------------------------
     Tiny Rain game code
 */
@@ -471,37 +481,31 @@ void playBird() {
   
   totalRun = 0;
   spawnTimer = 100;
-  interscore = 0;
   playerOffset = 56;
   playerXposition = 2;
   onground = 0; 
   doneUpdate = 0;
   newHigh = 0;
   score = 0; 
-  totalRun = 0;
-  int thisrun = 0;
-  int flag = 0;
+  int flag = 0; // Used for limiting the firepower
   List* storm = NULL;
   List* shots = NULL;
 
   randomSeed(0);
   
   while (stopAnimate == 0) {
-    // Total distance isn't really distance - it's a measure of how long the game's been running - used to stop the game
+    // Total distance isn't really distance - it's a measure of how long the game's been running - used to stop the game among other things
     totalRun++;
 
     // Increment score every 10 cycles
-    if (interscore >= 10) {
-      interscore = 0;
+    if (totalRun%10 == 0)
       score++;
-    }
 
     /*
      * NORMAL BUTTON USE
      */
     // With the left button down - the ball goes left
     if (digitalRead(0) == HIGH) {
-      thisrun++;
       playerXposition -= 1;
       if (playerXposition < 1)
         playerXposition = 1;
@@ -510,7 +514,6 @@ void playBird() {
 
     // With the right button pressed - the ball goes right 
     if (digitalRead(2) == HIGH) {
-      //playerOffset -= 1;
       playerXposition += 1;
       if (playerXposition > 117 )
         playerXposition = 117;
@@ -519,6 +522,7 @@ void playBird() {
     // With the fire button pressed - it fires
     if (analogRead(0) < 940 && flag == 0)
     {
+      beep(2, 20);
       shots = insertRearShots(shots, playerXposition + 6, playerOffset);
       flag = 1;
       //delay(100);
@@ -537,10 +541,13 @@ void playBird() {
     }
 
     // Fill in the bird in the top couple of rows
-    drawBird(7, 8);
+    drawPlayer(7, 8);
     // Updates and draws the rain
     updateRain(storm, shots);
+    // Updates and draws the shots taken
     updateShots(shots);
+    // Draws the score of this run
+    doNumber(0, 45, score);
     /*
     ssd1306_setpos(32, 1);
     ssd1306_send_data_start();
@@ -590,18 +597,6 @@ void playBird() {
     newHigh = 1;
     }
 }
-
-void sendBlock(int fill) {
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-}
-
 
 byte doDrawRS(byte P2) {
   return(B00000011 >> P2);
@@ -669,7 +664,7 @@ byte doDrawLSP(byte column, byte P2) {
   }
 }
 
-void drawBird(byte startRow, byte endRow) {
+void drawPlayer(byte startRow, byte endRow) {
     for (byte l = startRow; l <= endRow; l++) {
         ssd1306_setpos(playerXposition, l);
         ssd1306_send_data_start();
@@ -766,6 +761,7 @@ void updateRain(List* r, List* s)
         shotAux = shotAux->next;
         kill(aux2);
         flagContinue = 1;
+        beep(5, 200);
         break;
       }
 
