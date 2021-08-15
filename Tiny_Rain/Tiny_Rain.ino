@@ -38,9 +38,9 @@ byte doDrawLSP(byte, byte);
 byte doDrawRSP(byte, byte);
 void drawPlayer(byte startRow, byte endRow);
 void drawRainBlock(byte startRow, byte endRow, List* r);
-void drawShot(byte startRow, byte endRow, List* s);
-void updateRain(List* r, List* s);
-void updateShots(List* s);
+void drawShot(byte startRow, byte endRow, int* s);
+void updateRain(List* r, int* s);
+void updateShots(int* s);
 
 
 //Functions used for management of the data sent to the display
@@ -63,6 +63,7 @@ int playerXposition = 0; // player's offset according to the left side of the sc
 
 int score = 0;
 int top = 0;
+int fire = 0; // Used for limiting the firepower
 
 boolean newHigh = 0;
 boolean stopAnimate = 0;
@@ -75,8 +76,9 @@ boolean onground = 0;//boolean for checking wrather the bird is on the ground or
 boolean doneUpdate = 0;
 
 //Functions used in List
-/*Cria um deck vazio.*/
 List* createList (){return NULL;}
+
+
 List* getFront (List *q)
 {
   if (q == NULL)
@@ -88,6 +90,8 @@ List* getFront (List *q)
 
   return aux;
 }                                 
+
+
 List* getRear (List *q)
 {
   if (q == NULL)  
@@ -95,28 +99,13 @@ List* getRear (List *q)
   
   return q;
 }    
-List* insertFront (List *q, int x)
-{
-  List* neu = (List*)malloc(sizeof(List));
-  neu->posX = x;
-  neu->posY = 0;
-  neu->next = NULL;
 
-  List* aux = q;
-  if (aux != NULL)
-    while (aux->next != NULL)
-      aux = aux->next;
 
-  neu->previous = aux;
-  aux->next = neu;
-  
-  return q;
-}
 List* insertRearRain (List *q, int x)
 {
   List* neu = (List*)malloc(sizeof(List));
   neu->posX = x;
-  neu->posY = 0;
+  neu->posY = 8;
   neu->previous = NULL;
   neu->next = q;
   if (q != NULL)
@@ -124,39 +113,34 @@ List* insertRearRain (List *q, int x)
 
   return neu;
 }  
-List* insertRearShots (List *q, int x, int y)
-{
-  List* neu = (List*)malloc(sizeof(List));
-  neu->posX = x;
-  neu->posY = y;
-  neu->previous = NULL;
-  neu->next = q;
-  if (q != NULL)
-    q->previous = neu;
 
-  return neu;
-}  
-void kill (List* dead)
+
+int kill (List* dead)
 {
   if (dead->previous == NULL && dead->next != NULL)
   {
     dead->next->previous = NULL;
-    free(dead);
+    return 1;
   }
   else if (dead->next == NULL && dead->previous != NULL)
   {
     dead->previous->next = NULL;
-    free(dead);
+    return 1;
   }
   else if (dead->next != NULL && dead->previous != NULL)
   {
     dead->previous->next = dead->next;
     dead->next->previous = dead->previous;
-    free(dead);
+    return 1;
   }
-  else  
+  else
+  {  
     dead = NULL;
+    return 0;
+  }
 }
+
+
 void murder (List* r)
 {
   if (r != NULL)
@@ -196,87 +180,113 @@ void setup() {
 // Arduino stuff - loop
 void loop() {
   ssd1306_init();
-  ssd1306_fillscreen(0x00);
+  int flag = 0;
 
-  // The lower case character set is seriously compromised because I've had to truncate the ASCII table
-  // to release space for executable code - hence lower case y and w are remapped to h and / respectively.
-  // There is no z in the table (or h!) as these aren't used anywhere in the text here and most of the
-  // symbols are also missing for the same reason (see my hacked version of font6x8.h - font6x8AJ.h for more detail)
-  ssd1306_char_f6x8(8, 1, "   --------------");
-  ssd1306_char_f6x8(8, 2, "        TINY     ");
-  ssd1306_char_f6x8(8, 4, "        RAIN     ");
-  ssd1306_char_f6x8(8, 5, "   --------------");
-  ssd1306_char_f6x8(8, 7, "       GRUPO 1   "); // see comments above !
-
-  long startT = millis();
-  long nowT =0;
-  boolean sChange = 0;
-  while(digitalRead(0) == HIGH) {
-    nowT = millis();
-    if (nowT - startT > 2000) {
-      sChange = 1;     
-      if (digitalRead(2) == HIGH) {
-        EEPROM.write(0,0);
-        EEPROM.write(1,0);
-        ssd1306_char_f6x8(8, 0, "-HIGH SCORE RESET-");  
-      } else if (mute == 0) { mute = 1; ssd1306_char_f6x8(32, 0, "-- MUTE --"); } else { mute = 0; ssd1306_char_f6x8(23, 0, "-- SOUND ON --");  }    
-      break;
-    }
-    if (sChange == 1) break;
-  }  
-  while(digitalRead(0) == HIGH);
-
-  if (sChange == 0) {
-    delay(400);
-
-    for (int k = 2; k>=0;k--){
-      for (playerOffset = 55; playerOffset>0+(k*10);playerOffset--) {
-        drawPlayer(0,8);
-        beep(2,200+playerOffset);
-        delay(2);
-      }
-      for (playerOffset = 0+(k*10); playerOffset<55;playerOffset++) {
-        drawPlayer(0,8);
-        beep(2,200+playerOffset);
-        delay(2);
-      }
-    }
-
-    delay(600);
-    ssd1306_init();
+  while (flag == 0)
+  {
     ssd1306_fillscreen(0x00);
-    stopAnimate = 0;
 
-    srand(time(NULL));
-    playBird();
+    // The lower case character set is seriously compromised because I've had to truncate the ASCII table
+    // to release space for executable code - hence lower case y and w are remapped to h and / respectively.
+    // There is no z in the table (or h!) as these aren't used anywhere in the text here and most of the
+    // symbols are also missing for the same reason (see my hacked version of font6x8.h - font6x8AJ.h for more detail)
+    ssd1306_char_f6x8(8, 1, "   --------------");
+    ssd1306_char_f6x8(8, 2, "        TINY     ");
+    ssd1306_char_f6x8(8, 4, "        RAIN     ");
+    ssd1306_char_f6x8(8, 5, "   --------------");
+    ssd1306_char_f6x8(8, 7, "       GRUPO 1   "); // see comments above !
 
-    ssd1306_fillscreen(0x00);
-    ssd1306_char_f6x8(11, 1, "----------------");
-    ssd1306_char_f6x8(11, 2, "G A M E  O V E R");
-    ssd1306_char_f6x8(11, 3, "----------------");
-    ssd1306_char_f6x8(37, 5, "SCORE:");
-    doNumber(75, 5, score);
-    for (int i = 700; i>200; i = i - 50){
-    beep(30,i);
-    };
-    if (!newHigh) {
-      ssd1306_char_f6x8(21, 7, "HIGH SCORE:");
-      doNumber(88, 7, top);
-    }
-    delay(2000);
-    if (newHigh) {
+    long startT = millis();
+    long nowT =0;
+    boolean sChange = 0;
+    while(digitalRead(0) == HIGH) {
+      nowT = millis();
+      if (nowT - startT > 2000) {
+        sChange = 1;     
+        if (digitalRead(2) == HIGH) {
+          EEPROM.write(0,0);
+          EEPROM.write(1,0);
+          ssd1306_char_f6x8(8, 0, "-HIGH SCORE RESET-");  
+        } else if (mute == 0) { mute = 1; ssd1306_char_f6x8(32, 0, "-- MUTE --"); } else { mute = 0; ssd1306_char_f6x8(23, 0, "-- SOUND ON --");  }    
+        break;
+      }
+      if (sChange == 1) break;
+    }  
+    while(digitalRead(0) == HIGH);
+
+    if (sChange == 0) {
+      delay(400);
+
+      for (int k = 2; k>=0;k--){
+        for (playerOffset = 55; playerOffset>0+(k*10);playerOffset--) {
+          drawPlayer(0,8);
+          beep(2,200+playerOffset);
+          delay(2);
+        }
+        for (playerOffset = 0+(k*10); playerOffset<55;playerOffset++) {
+          drawPlayer(0,8);
+          beep(2,200+playerOffset);
+          delay(2);
+        }
+      }
+
+      delay(600);
+      ssd1306_init();
       ssd1306_fillscreen(0x00);
-      ssd1306_char_f6x8(10, 1, "----------------");
-      ssd1306_char_f6x8(10, 3, " NEW HIGH SCORE ");
-      ssd1306_char_f6x8(10, 7, "----------------");
-      doNumber(50,5,top);
+      stopAnimate = 0;
+
+      srand(time(NULL));
+      playBird();
+
+      ssd1306_fillscreen(0x00);
+      ssd1306_char_f6x8(11, 1, "----------------");
+      ssd1306_char_f6x8(11, 2, "G A M E  O V E R");
+      ssd1306_char_f6x8(11, 3, "----------------");
+      ssd1306_char_f6x8(37, 5, "SCORE:");
+      doNumber(75, 5, score);
       for (int i = 700; i>200; i = i - 50){
       beep(30,i);
+      };
+      if (!newHigh) {
+        ssd1306_char_f6x8(21, 7, "HIGH SCORE:");
+        doNumber(88, 7, top);
       }
-      newHigh = 0;
-      delay(2700);    
-    } 
+      delay(2000);
+      if (newHigh) {
+        ssd1306_fillscreen(0x00);
+        ssd1306_char_f6x8(10, 1, "----------------");
+        ssd1306_char_f6x8(10, 3, " NEW HIGH SCORE ");
+        ssd1306_char_f6x8(10, 7, "----------------");
+        doNumber(50,5,top);
+        for (int i = 700; i>200; i = i - 50){
+        beep(30,i);
+        }
+        newHigh = 0;
+        delay(2700);    
+      }
+
+      ssd1306_fillscreen(0x00);
+      
+        ssd1306_char_f6x8(10, 1, "    CONTINUE    ");
+        ssd1306_char_f6x8(10, 3, "   LEFT   YES    ");
+        ssd1306_char_f6x8(10, 5, "   RIGHT  NO   ");
+
+      while (flag == 0)
+      {
+        if (digitalRead(0) == HIGH)
+        {
+          break;
+        }
+        if (digitalRead(2) == HIGH)
+        {
+          flag = 1;
+          system_sleep();
+          break;
+        }
+      } 
+    }
   }
+
   system_sleep();
 }
 
@@ -487,10 +497,11 @@ void playBird() {
   doneUpdate = 0;
   newHigh = 0;
   score = 0; 
-  int flag = 0; // Used for limiting the firepower
+  stopAnimate = 0;
+  fire = 0;
   List* storm = NULL;
-  List* shots = NULL;
-
+  int shots[3] = {0}; // shots[0] == permission to shoot, shots[1] == shot x position, shots[2] == shot y position
+  
   randomSeed(0);
   
   while (stopAnimate == 0) {
@@ -500,6 +511,9 @@ void playBird() {
     // Increment score every 10 cycles
     if (totalRun%10 == 0)
       score++;
+    
+    // Draws the score of this run
+    doNumber(0, 1, score);
 
     /*
      * NORMAL BUTTON USE
@@ -511,7 +525,6 @@ void playBird() {
         playerXposition = 1;
     }
    
-
     // With the right button pressed - the ball goes right 
     if (digitalRead(2) == HIGH) {
       playerXposition += 1;
@@ -520,71 +533,38 @@ void playBird() {
     }
 
     // With the fire button pressed - it fires
-    if (analogRead(0) < 940 && flag == 0)
+    if (analogRead(0) < 940) fire = 1;
+
+    if ((fire == 1) && (shots[0] == 0))
     {
-      beep(2, 20);
-      shots = insertRearShots(shots, playerXposition + 6, playerOffset);
-      flag = 1;
-      //delay(100);
+      shots[0] = 1;
+      shots[1] = playerXposition+6;
+      shots[2] = playerOffset;
     }
 
     // Spawning the raindrops
     if (totalRun % spawnTimer == 0)
     {
       storm = insertRearRain(storm, rand()%120);
-      flag = 0;
+      fire = 0;
     }
+    
+    
     // Updating the spawnTimer
     if (totalRun % 1000 == 0)
     {
       spawnTimer -= 3;
-    }
+    }   
 
     // Fill in the bird in the top couple of rows
     drawPlayer(7, 8);
-    // Updates and draws the rain
-    updateRain(storm, shots);
     // Updates and draws the shots taken
     updateShots(shots);
-    // Draws the score of this run
-    doNumber(0, 45, score);
-    /*
-    ssd1306_setpos(32, 1);
-    ssd1306_send_data_start();
-    ssd1306_send_byte(B00011000);
-    ssd1306_send_byte(B00111100);
-    ssd1306_send_byte(B01111110);
-    ssd1306_send_byte(B11111111);
-    ssd1306_send_byte(B11111111);
-    ssd1306_send_byte(B01111110);
-    ssd1306_send_byte(B00111100);
-    ssd1306_send_byte(B00011000);
-    ssd1306_send_data_stop();
-
-    ssd1306_setpos(40, 1);
-    ssd1306_send_data_start();
-    ssd1306_send_byte(B00011000);
-    ssd1306_send_byte(B00111100);
-    ssd1306_send_byte(B01111110);
-    ssd1306_send_byte(B11111111);
-    ssd1306_send_byte(B11111111);
-    ssd1306_send_byte(B01111110);
-    ssd1306_send_byte(B00111100);
-    ssd1306_send_byte(B00011000);
-    ssd1306_send_data_stop();
-
-    ssd1306_setpos(38, 2);
-    ssd1306_send_data_start();
-    ssd1306_send_byte(B00111111);
-    ssd1306_send_byte(B11111111);
-    ssd1306_send_byte(B11111111);
-    ssd1306_send_byte(B11111111);
-    ssd1306_send_byte(B00111111);
-    ssd1306_send_data_stop();*/
-  
+    // Updates and draws the rain
+    updateRain(storm, shots);
   }
   murder(storm);
-  murder(shots);
+  free(shots);
   delay(1500);
   top = EEPROM.read(0);
   top = top << 8;
@@ -595,7 +575,7 @@ void playBird() {
     EEPROM.write(1,score & 0xFF); 
     EEPROM.write(0,(score>>8) & 0xFF); 
     newHigh = 1;
-    }
+  }
 }
 
 byte doDrawRS(byte P2) {
@@ -708,17 +688,17 @@ void drawRainBlock(byte startRow, byte endRow, List* r)
   }
 }
 
-void drawShot(byte startRow, byte endRow, List* s)
+void drawShot(byte startRow, byte endRow, int* s)
 {
   for (byte l=startRow ; l<=endRow ; l++)
   {
-    ssd1306_setpos(s->posX, l);
+    ssd1306_setpos(s[1], l);
     ssd1306_send_data_start();
 
-    if (l == s->posY/8)
-      ssd1306_send_byte(B11100000 >> (8 - ((s->posY)%8)));
-    else if (l == s->posY/8 - 1)
-      ssd1306_send_byte(B11100000 << ((s->posY)%8));
+    if (l == s[2]/8)
+      ssd1306_send_byte(B11100000 >> (8 - ((s[2])%8)));
+    else if (l == s[2]/8 - 1)
+      ssd1306_send_byte(B11100000 << ((s[2])%8));
     else
       ssd1306_send_byte(B00000000);
 
@@ -726,7 +706,7 @@ void drawShot(byte startRow, byte endRow, List* s)
   }
 }
 
-void updateRain(List* r, List* s)
+void updateRain(List* r, int* s)
 {
   int flagContinue = 0;
   List* aux = r;
@@ -749,23 +729,24 @@ void updateRain(List* r, List* s)
       delay(500);
     }
     //Collision with shots
-    List* shotAux = s;
-    while (shotAux != NULL)
+    if (s[0] != 0)
     {
-      if ((aux->posY + 8) >= (shotAux->posY - 3) && ((shotAux->posX)-(aux->posX) <= 3) && ((shotAux->posX)-(aux->posX) >= (-1)))
+      if ((aux->posY + 8) >= (s[2] - 3) && ((s[1])-(aux->posX) <= 3) && ((s[1])-(aux->posX) >= (-1)))
       {
-        List* aux2 = aux;
-        aux = aux->next;
-        kill(aux2);
-        aux2 = shotAux;
-        shotAux = shotAux->next;
-        kill(aux2);
+        s[0] = 0;
+        s[1] = 0;
+        s[2] = 7;
+        beep(30, 200);
+        ssd1306_fillscreen(0);
         flagContinue = 1;
-        beep(5, 200);
+        List* aux2 = aux;
+        if (kill(aux2) == 1)
+        {
+          aux = aux->next;
+          free(aux2);
+        }
         break;
       }
-
-      shotAux = shotAux->next;
     }
     if (flagContinue == 1)
     {
@@ -776,9 +757,12 @@ void updateRain(List* r, List* s)
     //Erasing the raindrops if they fall on the ground
     if ((aux->posY + 8) > 62)
     {
-      List* aux2 = aux;
-      aux = aux->next;
-      kill(aux2);
+      List* aux3 = aux;
+      if (kill(aux3) == 1)
+      {
+        aux = aux->next;
+        free(aux3);
+      }
       ssd1306_fillscreen(0);
       continue;
     }
@@ -786,23 +770,23 @@ void updateRain(List* r, List* s)
   }
 }
 
-void updateShots(List* s)
+void updateShots(int* s)
 {
-  List* aux = s;
-  while (aux != NULL)
+  if (s[0] != 0)
   {
-    aux->posY -= 2;
-
-    (aux->posY) >= 8 ? drawShot(((aux->posY)/8)-1, ((aux->posY)/8)+1, aux) : drawShot(1, 2, aux);
-
-    //Erasing the shots if they rit the ceiling 
-    if ((aux->posY - 4) < 1)
+    (s[2]) >= 8 ? drawShot(((s[2])/8)-1, ((s[2])/8)+1, s) : drawShot(1, 2, s);
+    // Dealing with hiting the ceiling
+    if (s[2] == 0) 
     {
-      List* aux2 = aux;
-      aux = aux->next;
-      kill(aux2);
-      continue;
+      ssd1306_setpos(s[1],0);
+      uint8_t temp = B00000000;
+      ssd1306_send_data_start();
+      ssd1306_send_byte(temp);  
+      ssd1306_send_data_stop();                                                          
+      s[0] = 0;
+      fire = 0;
     }
-    aux = aux->next;
+    else  
+      s[2] -= 1;
   }
 }
