@@ -19,7 +19,7 @@
 
 #define WINSCORE 7
 
-//Struct used for the rain falling, based on a list
+//Struct used for the rain falling, based on a doubly linked list
 typedef struct rain
 {
   int posX, posY;
@@ -27,20 +27,24 @@ typedef struct rain
   struct rain* next;
 }List;
 
-// Functions used for this game expecifically
-void sendBlock(int);
-void playBird(void);
-void beep(int, int);
 // Functions for moving bytes bit per bit in order to draw everything correctly
 byte doDrawLS(byte);
 byte doDrawRS(byte);
 byte doDrawLSP(byte, byte);
 byte doDrawRSP(byte, byte);
+// Functions used for this game expecifically
+void playTinyRain(void);
+void beep(int, int);
 void drawPlayer(byte startRow, byte endRow);
-void drawRainBlock(byte startRow, byte endRow, List* r);
+void drawRainBlock(byte startRow, byte endRow, List* r);// Explanation over the actual function 
 void drawShot(byte startRow, byte endRow, int* s);
 void updateRain(List* r, int* s);
 void updateShots(int* s);
+//Functions used in doubly linked list
+List* createList ();
+List* insertRearRain (List *q, int x);
+int kill (List* dead);// free one node
+void murder (List* r);// free all nodes int the list           
 
 
 //Functions used for management of the data sent to the display
@@ -58,115 +62,28 @@ void ssd1306_fillscreen(uint8_t fill_Data);
 void ssd1306_char_f6x8(uint8_t x, uint8_t y, const char ch[]);
 void ssd1306_draw_bmp(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint8_t bitmap[]);
 
+/*
+  General variables used throughout the code
+*/
 int playerOffset = 0; // y offset of the top of the player
 int playerXposition = 0; // player's offset according to the left side of the screen
-
 int score = 0;
 int top = 0;
 int fire = 0; // Used for limiting the firepower
+int totalRun = 0;
+int spawnTimer = 100;// The frequency of which the blocks spawn
 
 boolean newHigh = 0;
 boolean stopAnimate = 0;
 boolean mute = 0;
-
 byte i;
-int totalRun = 0;
-int spawnTimer = 100;// The frequency of which the blocks spawn
-boolean onground = 0;//boolean for checking wrather the bird is on the ground or not
-boolean doneUpdate = 0;
 
-//Functions used in List
-List* createList (){return NULL;}
-
-
-List* getFront (List *q)
-{
-  if (q == NULL)
-    return NULL;
-
-  List* aux = q;
-  while (aux->next != NULL)
-    aux = aux->next;
-
-  return aux;
-}                                 
-
-
-List* getRear (List *q)
-{
-  if (q == NULL)  
-    return NULL;
-  
-  return q;
-}    
-
-
-List* insertRearRain (List *q, int x)
-{
-  List* neu = (List*)malloc(sizeof(List));
-  neu->posX = x;
-  neu->posY = 8;
-  neu->previous = NULL;
-  neu->next = q;
-  if (q != NULL)
-    q->previous = neu;
-
-  return neu;
-}  
-
-
-int kill (List* dead)
-{
-  if (dead->previous == NULL && dead->next != NULL)
-  {
-    dead->next->previous = NULL;
-    return 1;
-  }
-  else if (dead->next == NULL && dead->previous != NULL)
-  {
-    dead->previous->next = NULL;
-    return 1;
-  }
-  else if (dead->next != NULL && dead->previous != NULL)
-  {
-    dead->previous->next = dead->next;
-    dead->next->previous = dead->previous;
-    return 1;
-  }
-  else
-  {  
-    dead = NULL;
-    return 0;
-  }
-}
-
-
-void murder (List* r)
-{
-  if (r != NULL)
-  {
-    if (r->next != NULL)
-    {
-      List* aux = r->next;      
-      while (aux->next != NULL)
-      {
-        free(r);
-        r = aux;
-        aux = aux->next;
-      }
-      free(r);
-      free(aux);
-    }
-    else
-      free(r);
-  }
-}                    
 
 // Interrupt handlers
 ISR(PCINT0_vect) { // PB0 pin button interrupt
 }
 
-void playerIncBird() { // PB2 pin button interrupt
+void playerIncRain() { // PB2 pin button interrupt
 }
 
 // Arduino stuff - setup
@@ -186,15 +103,14 @@ void loop() {
   {
     ssd1306_fillscreen(0x00);
 
-    // The lower case character set is seriously compromised because I've had to truncate the ASCII table
-    // to release space for executable code - hence lower case y and w are remapped to h and / respectively.
-    // There is no z in the table (or h!) as these aren't used anywhere in the text here and most of the
-    // symbols are also missing for the same reason (see my hacked version of font6x8.h - font6x8AJ.h for more detail)
+    /* Since no lower case characters, nor symbols, are used in the game, all of them have been "commented" from the ASCII table,
+    but the hexadecimal numbers used are still there. You can change it at any time by going to font6x8.h file.
+    */
     ssd1306_char_f6x8(8, 1, "   --------------");
     ssd1306_char_f6x8(8, 2, "        TINY     ");
     ssd1306_char_f6x8(8, 4, "        RAIN     ");
     ssd1306_char_f6x8(8, 5, "   --------------");
-    ssd1306_char_f6x8(8, 7, "       GRUPO 1   "); // see comments above !
+    ssd1306_char_f6x8(8, 7, "       GRUPO 1   ");
 
     long startT = millis();
     long nowT =0;
@@ -236,7 +152,7 @@ void loop() {
       stopAnimate = 0;
 
       srand(time(NULL));
-      playBird();
+      playTinyRain();
 
       ssd1306_fillscreen(0x00);
       ssd1306_char_f6x8(11, 1, "----------------");
@@ -472,29 +388,15 @@ void beep(int bCount, int bDelay) {
   }
 }
 
-void sendBlock(int fill) {
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-  ssd1306_send_byte(B00000000);
-}
-
-
 /* ------------------------
     Tiny Rain game code
 */
-void playBird() {
+void playTinyRain() {
   
   totalRun = 0;
   spawnTimer = 100;
   playerOffset = 56;
   playerXposition = 2;
-  onground = 0; 
-  doneUpdate = 0;
   newHigh = 0;
   score = 0; 
   stopAnimate = 0;
@@ -668,7 +570,11 @@ void drawPlayer(byte startRow, byte endRow) {
         ssd1306_send_data_stop();
     }
 }
-
+/*
+Each 8 bits (a byte) fills 8 pixels in a line and automatically jumps to the nexte column 
+and fills it up with each bit that you send.
+When a block is within 2 lines (8 pixels width each)...
+*/
 void drawRainBlock(byte startRow, byte endRow, List* r)
 {
   for (byte l=startRow ; l<=endRow ; l++)
@@ -722,7 +628,7 @@ void updateRain(List* r, int* s)
     else
       drawRainBlock(7, 8, aux);
 
-    //Collision
+    //Collision with player
     if (((aux->posY)+8) > playerOffset && (playerXposition-(aux->posX) < 3) && (playerXposition-(aux->posX) > (-8)))
     {
       stopAnimate = 1;
@@ -790,3 +696,69 @@ void updateShots(int* s)
       s[2] -= 1;
   }
 }
+
+/*************
+
+Functions used in doubly linked list
+
+*************/
+List* createList (){return NULL;}
+
+List* insertRearRain (List *q, int x)
+{
+  List* neu = (List*)malloc(sizeof(List));
+  neu->posX = x;
+  neu->posY = 8;
+  neu->previous = NULL;
+  neu->next = q;
+  if (q != NULL)
+    q->previous = neu;
+
+  return neu;
+}  
+
+int kill (List* dead)
+{
+  if (dead->previous == NULL && dead->next != NULL)
+  {
+    dead->next->previous = NULL;
+    return 1;
+  }
+  else if (dead->next == NULL && dead->previous != NULL)
+  {
+    dead->previous->next = NULL;
+    return 1;
+  }
+  else if (dead->next != NULL && dead->previous != NULL)
+  {
+    dead->previous->next = dead->next;
+    dead->next->previous = dead->previous;
+    return 1;
+  }
+  else
+  {  
+    dead = NULL;
+    return 0;
+  }
+}
+
+void murder (List* r)
+{
+  if (r != NULL)
+  {
+    if (r->next != NULL)
+    {
+      List* aux = r->next;      
+      while (aux->next != NULL)
+      {
+        free(r);
+        r = aux;
+        aux = aux->next;
+      }
+      free(r);
+      free(aux);
+    }
+    else
+      free(r);
+  }
+}                    
