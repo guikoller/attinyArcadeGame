@@ -1,3 +1,18 @@
+/*
+Final Project for the Integration Workshop I subject.
+
+This game was made by:
+João Vitor Caversan
+Alfons de Andrade
+Guilherme Koller 
+
+If you have any questions, contact us throught this e-mail:
+joaopassos@alunos.utfpr.edu.br
+
+All functions functionalities are commented in front of their headers or over the actual
+implementation. 
+*/
+
 #include <EEPROM.h>
 #include <time.h>
 #include "font6x8AJ.h"
@@ -13,8 +28,8 @@
 
 // Defines for OLED output
 #define SSD1306XLED_H
-#define SSD1306_SCL   PORTB4  // SCL, Pin 4 on SSD1306 Board - for webbogles board
-#define SSD1306_SDA   PORTB3  // SDA, Pin 3 on SSD1306 Board - for webbogles board
+#define SSD1306_SCL   PORTB3  // SCL, Pin 4 on SSD1306 Board - for webbogles board
+#define SSD1306_SDA   PORTB4 // SDA, Pin 3 on SSD1306 Board - for webbogles board
 #define SSD1306_SA    0x78  // Slave address
 
 #define WINSCORE 7
@@ -571,9 +586,12 @@ void drawPlayer(byte startRow, byte endRow) {
     }
 }
 /*
-Each 8 bits (a byte) fills 8 pixels in a line and automatically jumps to the nexte column 
-and fills it up with each bit that you send.
-When a block is within 2 lines (8 pixels width each)...
+Each 8 bits (a byte) fills 8 pixels in a downward line and automatically jumps to the nexte column, 
+filling it up with each bit that you send.
+When a block is within 2 lines (8 pixels wide each), that's when this function shines.
+It moves the block "n" pixels down in the given line, and "8-n" pixels up in the next line, completing 
+the draw from the bottom.
+The same logic is applied to all drawn things in this game.
 */
 void drawRainBlock(byte startRow, byte endRow, List* r)
 {
